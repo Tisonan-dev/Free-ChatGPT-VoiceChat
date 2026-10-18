@@ -5,16 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Voice Chat</title>
     <style>
-        :root {
-            --bg-color: #0c0813;
-            --main-purple: #c084fc;
-            --glow-purple: rgba(192, 132, 252, 0.4);
-            --btn-bg: #1e1330;
-            --btn-hover: #2e1d4a;
-            --text-color: #f3e8ff;
-            --red-color: #f43f5e;
-        }
-
         * {
             box-sizing: border-box;
             margin: 0;
@@ -22,7 +12,7 @@
         }
 
         body {
-            background-color: var(--bg-color);
+            background-color: #0c0813;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex;
             flex-direction: column;
@@ -47,7 +37,7 @@
             position: absolute;
             width: 240px;
             height: 240px;
-            background: var(--glow-purple);
+            background: rgba(192, 132, 252, 0.4);
             filter: blur(60px);
             border-radius: 50%;
             z-index: 1;
@@ -62,8 +52,8 @@
             border-radius: 50%;
             overflow: hidden;
             z-index: 2;
-            border: 4px solid var(--main-purple);
-            box-shadow: 0 0 30px var(--glow-purple);
+            border: 4px solid #c084fc;
+            box-shadow: 0 0 30px rgba(192, 132, 252, 0.4);
             animation: floatLogo 4s ease-in-out infinite alternate;
             transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
         }
@@ -75,7 +65,7 @@
             display: block;
         }
 
-        /* ===== ВЫКЛЮЧЕНО: логотип серый ===== */
+        /* ВЫКЛЮЧЕНО: логотип серый */
         .ui-disabled .ai-photo-logo {
             transform: scale(0.88);
             animation-play-state: paused;
@@ -99,7 +89,7 @@
             width: 68px;
             height: 68px;
             border-radius: 50%;
-            background-color: var(--btn-bg);
+            background-color: #1e1330;
             border: 2px solid rgba(192, 132, 252, 0.2);
             display: flex;
             justify-content: center;
@@ -107,20 +97,22 @@
             cursor: pointer;
             outline: none;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
             position: relative;
+            overflow: hidden; /* Важно: чтобы черта не вылезала за круг */
         }
 
         .btn svg {
             width: 26px;
             height: 26px;
-            fill: var(--text-color);
+            fill: #f3e8ff;
             transition: all 0.3s ease;
+            z-index: 2;
         }
 
         .btn:hover {
-            background-color: var(--btn-hover);
-            border-color: var(--main-purple);
+            background-color: #2e1d4a;
+            border-color: #c084fc;
             transform: translateY(-4px);
             box-shadow: 0 12px 28px rgba(192, 132, 252, 0.3);
         }
@@ -129,47 +121,56 @@
             transform: translateY(1px);
         }
 
-        /* Красная черта перечеркивания (скрыта по умолчанию) */
-        .mic-off-line {
-            display: none;
-            stroke: var(--red-color);
-            stroke-width: 3;
-            stroke-linecap: round;
+        .btn-forget:hover svg {
+            fill: #fbbf24;
+        }
+
+        /* =========================================
+           КРАСНАЯ ЧЕРТА (ОБЫЧНЫЙ DIV)
+           ========================================= */
+        .red-line {
+            position: absolute;
+            width: 44px; 
+            height: 4px;
+            background-color: #f43f5e; /* Явный красный цвет, без переменных */
+            border-radius: 2px;
+            transform: rotate(45deg) scale(0); /* Скрыта через масштаб */
+            opacity: 0;
+            z-index: 10;
+            box-shadow: 0 0 8px rgba(244, 63, 94, 0.8);
+            pointer-events: none;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
         }
 
         /* Микрофон ВЫКЛЮЧЕН: кнопка красная, черта видна */
         .ui-disabled .btn-mic {
             background-color: rgba(244, 63, 94, 0.2) !important;
-            border-color: var(--red-color) !important;
+            border-color: #f43f5e !important;
         }
 
         .ui-disabled .btn-mic svg {
-            fill: var(--red-color) !important;
+            fill: #94a3b8 !important; /* Серый микрофон */
         }
 
-        .ui-disabled .btn-mic .mic-off-line {
-            display: block !important;
-        }
-
-        /* Кнопка "Забыть" */
-        .btn-forget:hover svg {
-            fill: #fbbf24;
+        .ui-disabled .btn-mic .red-line {
+            transform: rotate(45deg) scale(1) !important; /* Показываем (увеличиваем) */
+            opacity: 1 !important;
         }
 
         .toast {
-            position: absolute;
-            bottom: 40px;
+            position: fixed;
+            top: 20px;
             background-color: rgba(30, 19, 48, 0.95);
-            border: 1px solid var(--main-purple);
-            color: var(--text-color);
+            border: 1px solid #c084fc;
+            color: #f3e8ff;
             padding: 12px 24px;
             border-radius: 30px;
             font-size: 14px;
             opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: translateY(-20px);
+            transition: all 0.4s ease;
             pointer-events: none;
-            z-index: 10;
+            z-index: 100;
         }
 
         .toast.show {
@@ -190,7 +191,7 @@
 </head>
 <body>
 
-    <!-- ui-disabled сразу тут: лого серый, кнопка красная с чертой -->
+    <!-- Класс ui-disabled задан сразу -->
     <div class="logo-container ui-disabled" id="interactionZone">
         <div class="logo-glow"></div>
         <div class="ai-photo-logo">
@@ -200,17 +201,16 @@
 
     <div class="controls-panel">
         <!-- Кнопка микрофона -->
-        <button class="btn btn-mic" id="btnMic" title="Включить/Выключить микрофон">
+        <button class="btn btn-mic" id="btnMic">
             <svg viewBox="0 0 24 24">
-                <!-- Сам микрофон -->
                 <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
-                <!-- Линия перечеркивания (сделана через path для 100% отображения) -->
-                <path class="mic-off-line" d="M3 3 L21 21" />
             </svg>
+            <!-- ЧЕРТА -->
+            <div class="red-line"></div>
         </button>
 
         <!-- Кнопка "Забыть" -->
-        <button class="btn btn-forget" id="btnForget" title="Забыть диалог">
+        <button class="btn btn-forget" id="btnForget">
             <svg viewBox="0 0 24 24">
                 <path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"/>
             </svg>
@@ -244,9 +244,7 @@
             recognition.interimResults = false;
             recognition.continuous = true;
 
-            recognition.onstart = () => {
-                recognitionActive = true;
-            };
+            recognition.onstart = () => { recognitionActive = true; };
 
             recognition.onresult = async (event) => {
                 const lastResult = event.results.length - 1;
@@ -260,7 +258,7 @@
             recognition.onerror = (event) => {
                 console.error('Ошибка микрофона:', event.error);
                 if (event.error === 'not-allowed') {
-                    showToast('Разрешите доступ к микрофону в настройках браузера');
+                    showToast('Разрешите доступ к микрофону');
                 }
                 recognitionActive = false;
                 isListening = false;
@@ -269,7 +267,6 @@
 
             recognition.onend = () => {
                 recognitionActive = false;
-                // Если мы не выключали его вручную, перезапускаем
                 if (isListening) {
                     try { recognition.start(); } catch (e) {}
                 }
@@ -333,6 +330,34 @@
             window.speechSynthesis.speak(utterance);
         }
 
+        // ФУНКЦИЯ ПРИНУДИТЕЛЬНОГО ОБНОВЛЕНИЯ СТИЛЕЙ КНОПКИ
+        function updateMicUI(disabled) {
+            const line = btnMic.querySelector('.red-line');
+            if (disabled) {
+                zone.classList.add('ui-disabled');
+                // Жестко прописываем стили через JS на случай, если CSS не применился
+                btnMic.style.backgroundColor = 'rgba(244, 63, 94, 0.2)';
+                btnMic.style.borderColor = '#f43f5e';
+                btnMic.querySelector('svg').style.fill = '#94a3b8';
+                if (line) {
+                    line.style.transform = 'rotate(45deg) scale(1)';
+                    line.style.opacity = '1';
+                }
+            } else {
+                zone.classList.remove('ui-disabled');
+                btnMic.style.backgroundColor = '';
+                btnMic.style.borderColor = '';
+                btnMic.querySelector('svg').style.fill = '';
+                if (line) {
+                    line.style.transform = 'rotate(45deg) scale(0)';
+                    line.style.opacity = '0';
+                }
+            }
+        }
+
+        // Применяем стили при загрузке страницы
+        updateMicUI(true);
+
         btnMic.addEventListener('click', () => {
             if (!recognition) {
                 showToast('Браузер не поддерживает микрофон');
@@ -341,14 +366,13 @@
 
             if (isListening) {
                 isListening = false;
-                zone.classList.add('ui-disabled');
-                // Используем abort() вместо stop(), чтобы не сбрасывать разрешение
+                updateMicUI(true); // Принудительно применяем "выключено"
                 try { recognition.abort(); } catch (e) {}
                 window.speechSynthesis.cancel();
                 showToast('Микрофон выключен');
             } else {
                 isListening = true;
-                zone.classList.remove('ui-disabled');
+                updateMicUI(false); // Принудительно применяем "включено"
                 if (!recognitionActive) {
                     try { recognition.start(); } catch (e) {}
                 }
@@ -361,7 +385,7 @@
             history = [];
             window.speechSynthesis.cancel();
             isListening = false;
-            zone.classList.add('ui-disabled');
+            updateMicUI(true); // Принудительно применяем "выключено"
             if (recognition) {
                 try { recognition.abort(); } catch (e) {}
             }
