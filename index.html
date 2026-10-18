@@ -24,7 +24,7 @@
             background: rgba(192, 132, 252, 0.4); filter: blur(60px);
             border-radius: 50%; z-index: 1;
             animation: breatheGlow 4s ease-in-out infinite alternate;
-            transition: all 0.5s ease;
+            transition: all 0.4s ease;
         }
 
         .ai-photo-logo {
@@ -32,12 +32,13 @@
             border-radius: 50%; overflow: hidden; z-index: 2;
             border: 4px solid #c084fc; box-shadow: 0 0 30px rgba(192, 132, 252, 0.4);
             animation: floatLogo 4s ease-in-out infinite alternate;
-            transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+            transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
         }
 
         .ai-photo-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
         /* ===== СТАТУСЫ ===== */
+        /* Выключено / Ожидание */
         .ui-disabled .ai-photo-logo {
             transform: scale(0.88); animation-play-state: paused;
             filter: grayscale(0.9) contrast(0.7) brightness(0.5);
@@ -45,11 +46,21 @@
         }
         .ui-disabled .logo-glow { animation-play-state: paused; opacity: 0.1; }
 
+        /* Слушаю (Фиолетовый) - базовый цвет */
+        .ui-listening .ai-photo-logo { border-color: #c084fc; box-shadow: 0 0 30px rgba(192, 132, 252, 0.6); }
+        .ui-listening .logo-glow { background: rgba(192, 132, 252, 0.4); }
+
+        /* Думаю (Желтый) */
         .ui-thinking .logo-glow { background: rgba(251, 191, 36, 0.5); opacity: 0.8; }
         .ui-thinking .ai-photo-logo { border-color: #fbbf24; box-shadow: 0 0 30px rgba(251, 191, 36, 0.6); }
 
+        /* Говорю (Зеленый) */
         .ui-speaking .logo-glow { background: rgba(52, 211, 153, 0.5); opacity: 0.8; }
         .ui-speaking .ai-photo-logo { border-color: #34d399; box-shadow: 0 0 30px rgba(52, 211, 153, 0.6); }
+
+        /* Оранжевый (Не расслышал) */
+        .ui-empty .logo-glow { background: rgba(249, 115, 22, 0.6); opacity: 1; }
+        .ui-empty .ai-photo-logo { border-color: #f97316; box-shadow: 0 0 40px rgba(249, 115, 22, 0.8); }
 
         .controls-panel { display: flex; gap: 40px; z-index: 5; }
 
@@ -126,7 +137,8 @@
         let isSpeaking = false;
         let history = [];
         let ttsTimeout = null;
-        let isAutoCycle = false; // Флаг для автоматического цикла
+        let autoRestartTimeout = null; 
+        let isSessionActive = false; // Флаг: идет ли сессия общения
         
         const VOICE_LANG = 'ru-RU';
 
@@ -149,7 +161,7 @@
                 if (line) { line.style.transform = 'rotate(45deg) scale(1)'; line.style.opacity = '1'; }
             } 
             else if (state === 'listening') {
-                zone.className = 'logo-container';
+                zone.className = 'logo-container ui-listening';
                 btnMic.style.backgroundColor = '';
                 btnMic.style.borderColor = '';
                 btnMic.querySelector('svg').style.fill = '';
@@ -169,6 +181,13 @@
                 btnMic.querySelector('svg').style.fill = '';
                 if (line) { line.style.transform = 'rotate(45deg) scale(0)'; line.style.opacity = '0'; }
             }
+            else if (state === 'empty') {
+                zone.className = 'logo-container ui-empty';
+                btnMic.style.backgroundColor = '';
+                btnMic.style.borderColor = '';
+                btnMic.querySelector('svg').style.fill = '';
+                if (line) { line.style.transform = 'rotate(45deg) scale(0)'; line.style.opacity = '0'; }
+            }
         }
 
         if (SpeechRecognition) {
@@ -183,8 +202,23 @@
             };
 
             recognition.onresult = async (event) => {
-                const userText = event.results[0][0].transcript;
+                // Если бот говорит, игнорируем звук (чтобы не ловить эхо)
+                if (isSpeaking) return;
+
+                const userText = event.results[0][0].transcript.trim();
                 console.log('Вы сказали:', userText);
+
+                // Если текст пустой - ИИ молчит, рамка оранжевая
+                if (userText === "") {
+                    isListening = false;
+                    updateMicUI('empty');
+                    if (isSessionActive) {
+                        autoRestartTimeout = setTimeout(startListening, 1000);
+                    }
+                    return;
+                }
+
+                // Если текст есть - обрабатываем через ИИ
                 isListening = false;
                 await sendToAI(userText);
             };
@@ -192,14 +226,20 @@
             recognition.onerror = (event) => {
                 console.error('Ошибка STT:', event.error);
                 isListening = false;
-                updateMicUI('disabled');
-                if (event.error === 'not-allowed') showToast('Разрешите доступ к микрофону');
+                // При ошибке или тишине сразу перезапускаем, если сессия активна
+                if (isSessionActive && !isSpeaking && !isProcessing) {
+                    updateMicUI('listening');
+                    autoRestartTimeout = setTimeout(startListening, 1000);
+                } else if (!isSessionActive) {
+                    updateMicUI('disabled');
+                }
             };
 
             recognition.onend = () => {
-                if (isListening) {
-                    isListening = false;
-                    updateMicUI('disabled');
+                isListening = false;
+                // Если слушали, но ничего не сказали, и сессия активна — перезапускаем
+                if (isSessionActive && !isProcessing && !isSpeaking) {
+                    autoRestartTimeout = setTimeout(startListening, 1000);
                 }
             };
         }
@@ -214,8 +254,7 @@
             if (isProcessing) return;
             isProcessing = true;
             updateMicUI('thinking');
-            showToast('Думаю...');
-
+            
             const messages = [
                 { role: 'system', content: SYSTEM_PROMPT },
                 ...history.slice(-6),
@@ -248,61 +287,56 @@
 
             } catch (error) {
                 console.error('Ошибка API:', error);
-                showToast('Ошибка соединения с ИИ');
-                updateMicUI('disabled');
+                // Если ошибка сети, бот молчит, перезапускаем слух
+                if (isSessionActive) {
+                    updateMicUI('listening');
+                    autoRestartTimeout = setTimeout(startListening, 1500);
+                } else {
+                    updateMicUI('disabled');
+                }
             } finally {
                 isProcessing = false;
             }
         }
 
         function speakText(text) {
-            if (!window.speechSynthesis) {
-                showToast('Синтез речи не поддерживается');
-                updateMicUI('disabled');
-                return;
-            }
+            if (!window.speechSynthesis) return;
 
-            // Очищаем предыдущие таймеры и речь
             if (ttsTimeout) clearTimeout(ttsTimeout);
-            window.speechSynthesis.cancel();
+            if (autoRestartTimeout) clearTimeout(autoRestartTimeout);
             
+            window.speechSynthesis.cancel();
             isSpeaking = true;
             updateMicUI('speaking');
 
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = VOICE_LANG;
             utterance.rate = 1.0;
-            utterance.pitch = 1.0;
 
             const voices = window.speechSynthesis.getVoices();
             const ruVoice = voices.find(v => v.lang.includes('ru'));
             if (ruVoice) utterance.voice = ruVoice;
 
-            // Функция завершения TTS
             const onTTSEnd = () => {
-                if (!isSpeaking) return; // Защита от двойного вызова
+                if (!isSpeaking) return;
                 isSpeaking = false;
                 
-                // Автоматически включаем микрофон для следующего вопроса
-                if (isAutoCycle) {
-                    startListening(true); 
+                // После окончания речи сразу включаем микрофон (если сессия активна)
+                if (isSessionActive) {
+                    startListening();
                 } else {
                     updateMicUI('disabled');
                 }
             };
 
             utterance.onend = onTTSEnd;
-            utterance.onerror = (e) => {
-                console.error('Ошибка TTS:', e);
-                onTTSEnd();
-            };
+            utterance.onerror = onTTSEnd;
 
-            // СТРАХОВКА: Если событие onend не сработает (баг мобильных браузеров),
-            // таймер принудительно включит микрофон через расчетное время + 1 сек.
-            const estimatedTime = (text.length / 10) * 1000 + 1000; // ~10 символов в секунду
+            // Страховочный таймер
+            const estimatedTime = (text.length / 10) * 1000 + 1500;
             ttsTimeout = setTimeout(() => {
                 if (isSpeaking) {
-                    console.log('Принудительное завершение TTS по таймеру');
+                    console.log('Принудительное завершение TTS');
                     window.speechSynthesis.cancel();
                     onTTSEnd();
                 }
@@ -311,64 +345,61 @@
             window.speechSynthesis.speak(utterance);
         }
 
-        function startListening(isAuto = false) {
-            if (!recognition) {
-                showToast('Браузер не поддерживает микрофон');
-                return;
-            }
+        function startListening() {
+            if (!recognition) return;
             if (isListening || isSpeaking || isProcessing) return;
 
-            isAutoCycle = isAuto;
+            // Очищаем старые таймеры перезапуска
+            if (autoRestartTimeout) clearTimeout(autoRestartTimeout);
 
             try {
-                if (window.speechSynthesis) window.speechSynthesis.cancel();
                 recognition.start();
-                if (!isAuto) showToast('Слушаю...'); // Показываем тост только при ручном клике
             } catch (e) {
-                console.error('Не удалось запустить микрофон', e);
-                updateMicUI('disabled');
+                console.error('Микрофон занят', e);
+                // Если не удалось стартовать, пробуем через 1 сек
+                if (isSessionActive) {
+                    autoRestartTimeout = setTimeout(startListening, 1000);
+                }
             }
         }
 
         btnMic.addEventListener('click', () => {
-            // Если идет запись или обработка - выключаем
-            if (isListening || isSpeaking || isProcessing) {
-                isAutoCycle = false;
+            if (isSessionActive) {
+                // Выключение сессии
+                isSessionActive = false;
                 isListening = false;
                 isSpeaking = false;
                 isProcessing = false;
                 
-                if (recognition) recognition.abort();
-                if (window.speechSynthesis) window.speechSynthesis.cancel();
                 if (ttsTimeout) clearTimeout(ttsTimeout);
+                if (autoRestartTimeout) clearTimeout(autoRestartTimeout);
+                if (window.speechSynthesis) window.speechSynthesis.cancel();
+                if (recognition) recognition.abort();
                 
                 updateMicUI('disabled');
                 showToast('Микрофон выключен');
             } else {
-                // Ручное включение
-                startListening(false);
+                // Включение сессии
+                isSessionActive = true;
+                startListening();
             }
         });
 
         btnForget.addEventListener('click', () => {
             history = [];
-            isAutoCycle = false;
+            isSessionActive = false;
             isListening = false;
             isSpeaking = false;
             isProcessing = false;
             
             if (ttsTimeout) clearTimeout(ttsTimeout);
+            if (autoRestartTimeout) clearTimeout(autoRestartTimeout);
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             if (recognition) recognition.abort();
             
             updateMicUI('disabled');
             showToast('Диалог очищен');
         });
-
-        // Прогрев голосов
-        if (window.speechSynthesis) {
-            window.speechSynthesis.getVoices();
-        }
     </script>
 </body>
 </html>
