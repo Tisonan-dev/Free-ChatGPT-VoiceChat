@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Voice Chat (Groq)</title>
+    <title>AI Voice Chat</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -11,7 +11,7 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             min-height: 100vh; overflow: hidden; padding: 20px;
-            padding-bottom: 120px; 
+            padding-bottom: 120px; /* Место для лога */
         }
         .logo-container {
             position: relative; width: 280px; height: 280px;
@@ -76,6 +76,7 @@
         .ui-disabled .btn-mic svg { fill: #94a3b8 !important; }
         .ui-disabled .btn-mic .red-line { transform: rotate(45deg) scale(1) !important; opacity: 1 !important; }
 
+        /* ЛОГ */
         .log-panel {
             position: fixed; bottom: 0; left: 0; width: 100%;
             background: rgba(0, 0, 0, 0.85); border-top: 2px solid #c084fc;
@@ -113,13 +114,10 @@
     </div>
 
     <div class="toast" id="toastNotify">Диалог очищен</div>
+    
     <div class="log-panel" id="logPanel"></div>
 
     <script>
-        const GROQ_API_KEY = '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'; // Ключ для ИИ запросов. Да, прямо сдесь <3
-        
-        const GROQ_MODEL = 'llama-3.1-8b-instant'; 
-
         const zone = document.getElementById('interactionZone');
         const btnMic = document.getElementById('btnMic');
         const btnForget = document.getElementById('btnForget');
@@ -136,22 +134,20 @@
         
         const VOICE_LANG = 'ru-RU';
 
+        // Сокращенный системный промпт (меньше токенов = быстрее ответ)
+        const SYSTEM_PROMPT = `Ты — голосовой помощник. Не пиши код. Математику произноси словами (плюс, минус). Отвечай кратко и естественно.`;
+
         function log(msg, type = 'info') {
             const time = new Date().toLocaleTimeString('ru-RU', { hour12: false });
             const span = document.createElement('span');
-            let color = '#a3e635'; 
-            if (type === 'error') color = '#f43f5e'; 
-            if (type === 'warn') color = '#fbbf24'; 
+            let color = '#a3e635'; // green
+            if (type === 'error') color = '#f43f5e'; // red
+            if (type === 'warn') color = '#fbbf24'; // yellow
             span.innerHTML = `<span class="log-time">[${time}]</span> <span style="color:${color}">${msg}</span>`;
             logPanel.appendChild(span);
             logPanel.scrollTop = logPanel.scrollHeight;
             console.log(`[${time}] ${msg}`);
         }
-
-        const SYSTEM_PROMPT = `Ты — голосовой ИИ-помощник. Твои ответы будут озвучиваться, поэтому:
-1. НИКОГДА не пиши программный код, скрипты или HTML-разметку. Ты голосовой ассистент, а не программист.
-2. При решении математических примеров НЕ используй символы +, -, *, /. Вместо этого пиши словами: "плюс", "минус", "умножить на", "разделить на". Например, вместо "2+2=4" пиши "два плюс два равно четыре".
-3. Отвечай кратко и естественно, как в устной беседе.`;
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         let recognition = null;
@@ -166,9 +162,7 @@
                 if (line) { line.style.transform = 'rotate(45deg) scale(1)'; line.style.opacity = '1'; }
             } else if (state === 'listening') {
                 zone.className = 'logo-container ui-listening';
-                btnMic.style.backgroundColor = '';
-                btnMic.style.borderColor = '';
-                btnMic.querySelector('svg').style.fill = '';
+                btnMic.style.backgroundColor = ''; btnMic.style.borderColor = ''; btnMic.querySelector('svg').style.fill = '';
                 if (line) { line.style.transform = 'rotate(45deg) scale(0)'; line.style.opacity = '0'; }
             } else if (state === 'thinking') {
                 zone.className = 'logo-container ui-thinking';
@@ -192,7 +186,7 @@
             recognition.continuous = false;
 
             recognition.onstart = () => {
-                log('STT: Микрофон включен, слушаю...');
+                log('STT: Слушаю...');
                 isListening = true;
                 updateMicUI('listening');
             };
@@ -200,15 +194,13 @@
             recognition.onresult = async (event) => {
                 if (isSpeaking) return;
                 const userText = event.results[0][0].transcript.trim();
-                log(`STT: Распознан текст: "${userText}"`);
+                log(`STT: "${userText}"`);
 
                 if (userText === "") {
-                    log('STT: Пустой текст', 'warn');
+                    log('STT: Пусто', 'warn');
                     isListening = false;
                     updateMicUI('empty');
-                    if (isSessionActive) {
-                        restartTimeout = setTimeout(startListening, 1200);
-                    }
+                    if (isSessionActive) restartTimeout = setTimeout(startListening, 1200);
                     return;
                 }
 
@@ -228,14 +220,12 @@
             };
 
             recognition.onend = () => {
-                log('STT: Микрофон выключен (onend)');
+                log('STT: Микрофон выкл (onend)');
                 isListening = false;
                 if (isSessionActive && !isProcessing && !isSpeaking) {
                     restartTimeout = setTimeout(startListening, 1500);
                 }
             };
-        } else {
-            log('STT не поддерживается браузером', 'error');
         }
 
         function showToast(message) {
@@ -244,61 +234,63 @@
             setTimeout(() => toast.classList.remove('show'), 2000);
         }
 
-        async function sendToAI(userMessage) {
+        async function sendToAI(userMessage, attempt = 1) {
             if (isProcessing) return;
             isProcessing = true;
             updateMicUI('thinking');
-            log(`API: Отправка запроса в Groq (${GROQ_MODEL})...`);
+            log(`API: Запрос (попытка ${attempt})...`);
 
+            // ОСТАВЛЯЕМ ТОЛЬКО ПОСЛЕДНИЕ 2 СООБЩЕНИЯ (1 вопрос + 1 ответ) ДЛЯ СКОРОСТИ
             const messages = [
                 { role: 'system', content: SYSTEM_PROMPT },
-                ...history.slice(-6),
+                ...history.slice(-2), 
                 { role: 'user', content: userMessage }
             ];
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
-                log('API: Таймаут 15 сек, прерываем...', 'error');
+                log('API: Таймаут 30 сек, сдаемся', 'error');
                 controller.abort();
-            }, 15000);
+            }, 30000); // Увеличили до 30 секунд
 
             try {
-                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                const response = await fetch('https://text.pollinations.ai/openai', {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${GROQ_API_KEY}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: GROQ_MODEL,
+                        model: 'openai',
                         messages: messages,
                         temperature: 0.7,
-                        max_tokens: 200 // Короткие ответы для быстрого TTS
+                        max_tokens: 150 // Ограничили длину ответа (быстрее генерируется)
                     }),
                     signal: controller.signal
                 });
 
                 clearTimeout(timeoutId);
-                log(`API: Получен статус ${response.status}`);
+                log(`API: Статус ${response.status}`);
 
-                if (!response.ok) {
-                    const errText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errText}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 
                 const data = await response.json();
                 const aiText = data.choices[0].message.content;
-                log(`API: Ответ получен: "${aiText.substring(0, 50)}..."`);
+                log(`API: Ответ: "${aiText.substring(0, 30)}..."`);
 
                 history.push({ role: 'user', content: userMessage });
                 history.push({ role: 'assistant', content: aiText });
-                if (history.length > 6) history = history.slice(-6);
+                if (history.length > 4) history = history.slice(-4);
 
                 speakText(aiText);
             } catch (error) {
                 clearTimeout(timeoutId);
                 log(`API Ошибка: ${error.message}`, 'error');
-                
+
+                if (attempt === 1 && (error.name === 'AbortError' || error.message.includes('Failed to fetch'))) {
+                    log('API: Повтор...', 'warn');
+                    isProcessing = false;
+                    setTimeout(() => sendToAI(userMessage, 2), 2000);
+                    return;
+                }
+
                 if (isSessionActive) {
                     updateMicUI('empty');
                     restartTimeout = setTimeout(startListening, 2000);
@@ -311,17 +303,14 @@
         }
 
         function speakText(text) {
-            if (!window.speechSynthesis) {
-                log('TTS: Синтез речи не поддерживается', 'error');
-                return;
-            }
+            if (!window.speechSynthesis) return;
             if (ttsTimeout) clearTimeout(ttsTimeout);
             if (restartTimeout) clearTimeout(restartTimeout);
 
             window.speechSynthesis.cancel();
             isSpeaking = true;
             updateMicUI('speaking');
-            log('TTS: Начинаю озвучку...');
+            log('TTS: Говорю...');
 
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = VOICE_LANG;
@@ -333,9 +322,8 @@
             const onTTSEnd = () => {
                 if (!isSpeaking) return;
                 isSpeaking = false;
-                log('TTS: Озвучка завершена');
+                log('TTS: Закончил');
                 if (isSessionActive) {
-                    log('UI: Автоперезапуск микрофона через 800мс...');
                     restartTimeout = setTimeout(startListening, 800);
                 } else {
                     updateMicUI('disabled');
@@ -343,15 +331,11 @@
             };
 
             utterance.onend = onTTSEnd;
-            utterance.onerror = (e) => {
-                log(`TTS Ошибка: ${e.error}`, 'error');
-                onTTSEnd();
-            };
+            utterance.onerror = onTTSEnd;
 
             const estimatedTime = (text.length / 10) * 1000 + 2000;
             ttsTimeout = setTimeout(() => {
                 if (isSpeaking) {
-                    log('TTS: Принудительное завершение по таймеру', 'warn');
                     window.speechSynthesis.cancel();
                     onTTSEnd();
                 }
@@ -362,27 +346,20 @@
 
         function startListening() {
             if (!recognition) return;
-            if (isListening || isSpeaking || isProcessing) {
-                log('UI: Попытка запуска микрофона, но он занят', 'warn');
-                return;
-            }
+            if (isListening || isSpeaking || isProcessing) return;
             if (restartTimeout) clearTimeout(restartTimeout);
 
-            updateMicUI('disabled'); 
+            updateMicUI('disabled'); // Сначала "выключено"
             
-            log('UI: Запуск микрофона...');
             try {
                 recognition.start();
             } catch (e) {
-                log(`UI: Ошибка запуска микрофона: ${e.message}`, 'error');
-                if (isSessionActive) {
-                    restartTimeout = setTimeout(startListening, 1500);
-                }
+                log(`UI: Ошибка запуска: ${e.message}`, 'error');
+                if (isSessionActive) restartTimeout = setTimeout(startListening, 1500);
             }
         }
 
         btnMic.addEventListener('click', () => {
-            log('КЛИК: Кнопка микрофона');
             if (isSessionActive) {
                 isSessionActive = false;
                 isListening = false; isSpeaking = false; isProcessing = false;
@@ -392,7 +369,7 @@
                 if (recognition) recognition.abort();
                 updateMicUI('disabled');
                 showToast('Микрофон выключен');
-                log('UI: Сессия завершена пользователем');
+                log('UI: Выключено вручную');
             } else {
                 isSessionActive = true;
                 startListening();
@@ -400,7 +377,6 @@
         });
 
         btnForget.addEventListener('click', () => {
-            log('КЛИК: Кнопка "Забыть"');
             history = [];
             isSessionActive = false;
             isListening = false; isSpeaking = false; isProcessing = false;
@@ -413,13 +389,10 @@
             log('UI: История очищена');
         });
 
-        log('СИСТЕМА: Страница загружена. Модель: ' + GROQ_MODEL);
+        // При загрузке страницы принудительно ставим "выключено"
         updateMicUI('disabled');
-        
-        if (window.speechSynthesis) {
-            window.speechSynthesis.getVoices();
-            log('TTS: Голоса загружены');
-        }
+        log('СИСТЕМА: Готово');
+        if (window.speechSynthesis) window.speechSynthesis.getVoices();
     </script>
 </body>
 </html>
